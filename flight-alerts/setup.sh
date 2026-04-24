@@ -35,10 +35,32 @@ fi
 PY_VERSION=$(python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])')
 log "Python $PY_VERSION detected"
 
+# Ensure venv + ensurepip are available (Debian/Ubuntu ships them separately)
+if ! python3 -c "import ensurepip" >/dev/null 2>&1; then
+  warn "python3-venv / ensurepip is missing."
+  if command -v apt-get >/dev/null 2>&1; then
+    VENV_PKG="python${PY_VERSION}-venv"
+    info "Installing $VENV_PKG via apt (requires sudo)..."
+    if sudo apt-get update -y && sudo apt-get install -y "$VENV_PKG"; then
+      log "$VENV_PKG installed"
+    else
+      warn "apt install failed. Try manually: sudo apt install $VENV_PKG"
+      exit 1
+    fi
+  else
+    warn "Install the venv module for your Python, then re-run this script."
+    exit 1
+  fi
+fi
+
 # -----------------------------------------------
 # 2. Create virtualenv
 # -----------------------------------------------
-if [ ! -d "venv" ]; then
+if [ ! -d "venv" ] || [ ! -x "venv/bin/python" ]; then
+  if [ -d "venv" ]; then
+    warn "Removing incomplete venv directory"
+    rm -rf venv
+  fi
   info "Creating virtualenv at ./venv..."
   python3 -m venv venv
   log "venv created"
