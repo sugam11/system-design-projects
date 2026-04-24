@@ -56,10 +56,10 @@ crontab -e
 Add:
 
 ```
-0 7,15,23 * * * /home/ubuntu/flight-alerts/venv/bin/python /home/ubuntu/flight-alerts/src/main.py >> /home/ubuntu/flight-alerts/run.log 2>&1
+0 7 * * 2-4 /home/ubuntu/flight-alerts/venv/bin/python /home/ubuntu/flight-alerts/src/main.py >> /home/ubuntu/flight-alerts/run.log 2>&1
 ```
 
-Runs at 7am, 3pm, 11pm server time. All output goes to `run.log`.
+Runs at 7am **Tuesday through Thursday** only — keeps weekends quiet and caps you at ~13 runs/month so the SerpApi budget stays predictable. All output goes to `run.log`.
 
 ---
 
@@ -80,11 +80,23 @@ Each route:
 | `origin` / `destination` | 3-letter IATA codes |
 | `label` | Human-readable, used in logs and alerts |
 | `trip_type` | `1` = round trip, `2` = one way |
-| `days_out_start` / `days_out_end` | Search window (days from today) |
-| `date_step` | Check every Nth day in that window |
-| `max_stops` | `0` = nonstop only, `1`, `2`, or `null` for no limit (filters at the SerpApi layer) |
+| `search_start` / `search_end` | Calendar window to search (ISO `YYYY-MM-DD`) |
+| `dates_per_run` | How many dates to query each run (default 5) |
+| `travel_class` | `1` = Economy, `2` = Premium economy, `3` = Business, `4` = First |
+| `max_stops` | `0` = nonstop only, `1`, `2`, or `null` for no limit |
 
-**Budget note:** 1 route × 13 dates × 3 runs/day × 30 days ≈ 1170 calls/month — well over the 250 free tier. `configure.py` warns you. Tighten the window or reduce cron cadence to fit.
+### Date selection per run
+
+Instead of querying a fixed bucket of dates, each run picks `dates_per_run` dates out of the window using this strategy:
+
+- **1 sticky date** — the date with the cheapest price we've seen for this route in the last 7 days (encourages re-checking a known-cheap date so alerts fire when it drops further)
+- **Remaining dates** — sampled uniformly at random from the rest of the window
+
+This lets you cover a wide calendar window without burning through your SerpApi quota.
+
+**Budget** (with Tue–Thu × 1 run/day = ~13 runs/month):
+- 1 route × 5 dates × 13 runs ≈ 65 calls/month → fits 3 routes under the 250-call free tier.
+- `configure.py` computes and displays the live total for your current config.
 
 ---
 

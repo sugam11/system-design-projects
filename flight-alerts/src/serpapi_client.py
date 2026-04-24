@@ -54,6 +54,11 @@ def fetch(route: dict, departure_date: date) -> list[dict]:
         # SerpApi stops: 1 = any, 2 = nonstop, 3 = <=1 stop, 4 = <=2 stops
         params["stops"] = max_stops + 2
 
+    travel_class = route.get("travel_class")
+    if travel_class is not None:
+        # SerpApi travel_class: 1 = economy, 2 = premium economy, 3 = business, 4 = first
+        params["travel_class"] = travel_class
+
     call_args = (
         route["origin"],
         route["destination"],

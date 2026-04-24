@@ -1,8 +1,9 @@
 import logging
-from datetime import date, datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 import analyzer
+import date_picker
 import db
 import notifier
 import serpapi_client
@@ -20,20 +21,12 @@ log = logging.getLogger("flight-alerts")
 HEARTBEAT_HOUR = 7
 
 
-def _date_window(route: dict) -> list[date]:
-    today = date.today()
-    return [
-        today + timedelta(days=n)
-        for n in range(route["days_out_start"], route["days_out_end"] + 1, route["date_step"])
-    ]
-
-
 def run_route(route: dict) -> tuple[int, int, int]:
     fares_seen = 0
     alerts_sent = 0
     api_calls = 0
 
-    for departure_date in _date_window(route):
+    for departure_date in date_picker.select_dates(route):
         try:
             fares = serpapi_client.fetch(route, departure_date)
         except Exception:

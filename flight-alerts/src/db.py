@@ -63,6 +63,33 @@ def save_fares(fares: list[dict]) -> int:
         return cur.rowcount
 
 
+def get_cheapest_recent_date(
+    origin: str,
+    destination: str,
+    window_start,
+    window_end,
+    since_days: int = 7,
+):
+    """Return the departure_date with the lowest observed price for a route
+    within [window_start, window_end], seen in the last `since_days`."""
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT departure_date
+            FROM fares
+            WHERE origin = %s
+              AND destination = %s
+              AND departure_date BETWEEN %s AND %s
+              AND fetched_at > NOW() - (%s || ' days')::interval
+            ORDER BY price ASC
+            LIMIT 1
+            """,
+            (origin, destination, window_start, window_end, since_days),
+        )
+        row = cur.fetchone()
+        return row[0] if row else None
+
+
 def get_median_price(origin: str, destination: str, departure_date) -> tuple[float | None, int]:
     """Returns (median_price, distinct_day_count) for a given route+date over last 30 days."""
     with connect() as conn, conn.cursor() as cur:
