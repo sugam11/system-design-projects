@@ -1,0 +1,13 @@
+[
+  {
+    "origin": "RDU",
+    "destination": "JAC",
+    "label": "RDU → JAC",
+    "trip_type": 1,
+    "search_start": "2026-05-08",
+    "search_end": "2026-07-23",
+    "dates_per_run": 5,
+    "travel_class": 1,
+    "max_stops": null
+  }
+]
