@@ -3,7 +3,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import psycopg2
-from psycopg2.extras import execute_values
+from psycopg2.extras import Json, execute_values
 
 from config import ALERT_COOLDOWN_HOURS, DATABASE_URL
 
@@ -101,6 +101,48 @@ def was_recently_alerted(
             (origin, destination, departure_date, hours),
         )
         return cur.fetchone() is not None
+
+
+def log_api_call(
+    origin: str,
+    destination: str,
+    outbound_date,
+    trip_type: int,
+    route_label: str,
+    status: str,
+    response: dict | None = None,
+    error_message: str | None = None,
+) -> None:
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO serp_api_calls
+                (route_label, origin, destination, outbound_date, trip_type,
+                 status, error_message, response)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                route_label,
+                origin,
+                destination,
+                outbound_date,
+                trip_type,
+                status,
+                error_message,
+                Json(response) if response is not None else None,
+            ),
+        )
+
+
+def count_api_calls_this_month() -> int:
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT COUNT(*) FROM serp_api_calls
+            WHERE called_at >= date_trunc('month', NOW())
+            """
+        )
+        return int(cur.fetchone()[0])
 
 
 def record_alert(origin: str, destination: str, departure_date, price: float) -> None:

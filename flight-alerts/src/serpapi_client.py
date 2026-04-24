@@ -3,6 +3,7 @@ from datetime import date, timedelta
 
 from serpapi import GoogleSearch
 
+import db
 from config import SERPAPI_KEY
 
 log = logging.getLogger(__name__)
@@ -48,11 +49,24 @@ def fetch(route: dict, departure_date: date) -> list[dict]:
         "currency": "USD",
         "hl": "en",
     }
+    max_stops = route.get("max_stops")
+    if max_stops is not None:
+        # SerpApi stops: 1 = any, 2 = nonstop, 3 = <=1 stop, 4 = <=2 stops
+        params["stops"] = max_stops + 2
+
+    call_args = (
+        route["origin"],
+        route["destination"],
+        departure_date,
+        route["trip_type"],
+        route["label"],
+    )
 
     try:
         response = GoogleSearch(params).get_dict()
     except Exception as e:
         log.warning("SerpApi error for %s on %s: %s", route["label"], departure_date, e)
+        db.log_api_call(*call_args, status="error", error_message=str(e))
         return []
 
     if "error" in response:
@@ -61,6 +75,9 @@ def fetch(route: dict, departure_date: date) -> list[dict]:
             route["label"],
             departure_date,
             response["error"],
+        )
+        db.log_api_call(
+            *call_args, status="error", response=response, error_message=response["error"]
         )
         return []
 
@@ -76,7 +93,10 @@ def fetch(route: dict, departure_date: date) -> list[dict]:
 
     if lowest_price is None:
         log.info("No fares returned for %s on %s", route["label"], departure_date)
+        db.log_api_call(*call_args, status="empty", response=response)
         return []
+
+    db.log_api_call(*call_args, status="ok", response=response)
 
     details = (
         _offer_details(cheapest)

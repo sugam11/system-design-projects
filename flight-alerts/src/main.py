@@ -93,18 +93,20 @@ def main() -> None:
             log.exception("Route %s failed", route["label"])
 
     elapsed = (datetime.utcnow() - started).total_seconds()
+    month_calls = db.count_api_calls_this_month()
     log.info(
-        "Done in %.1fs (fares=%d, alerts=%d, api_calls=%d)",
+        "Done in %.1fs (fares=%d, alerts=%d, api_calls_this_run=%d, api_calls_this_month=%d/250)",
         elapsed,
         total_fares,
         total_alerts,
         total_calls,
+        month_calls,
     )
 
     if datetime.now().hour == HEARTBEAT_HOUR:
         notifier.send_heartbeat(
             f"flight-alerts ok: {total_fares} fares, {total_alerts} alerts, "
-            f"{total_calls} api calls, {elapsed:.0f}s"
+            f"{total_calls} calls ({month_calls}/250 this month), {elapsed:.0f}s"
         )
 
 

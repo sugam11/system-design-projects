@@ -65,21 +65,26 @@ Runs at 7am, 3pm, 11pm server time. All output goes to `run.log`.
 
 ## Adding or changing routes
 
-Edit [`src/config.py`](src/config.py). Each route is a dict:
+Run the interactive configurator:
 
-```python
-{
-    "origin": "RDU",           # IATA code
-    "destination": "SFO",      # IATA code
-    "label": "RDU → SFO",      # human-readable, used in logs
-    "trip_type": 2,            # 1 = round trip, 2 = one way
-    "days_out_start": 7,       # search window start (days from today)
-    "days_out_end": 90,        # search window end
-    "date_step": 7,            # step size (every Nth day)
-}
+```bash
+./venv/bin/python configure.py
 ```
 
-Stay within the SerpApi free tier. For 2 routes × 13 dates × 3 runs/day × 30 days ≈ 234 calls/month. The 250-call cap is tight — don't add more routes without tightening the date window.
+It lets you list, add, and delete routes, and shows a budget estimate for 1x/2x/3x-per-day cron cadence against the 250-call SerpApi free tier. All routes are persisted to [`routes.json`](routes.json) — you can also edit that file by hand.
+
+Each route:
+
+| Field | Meaning |
+|---|---|
+| `origin` / `destination` | 3-letter IATA codes |
+| `label` | Human-readable, used in logs and alerts |
+| `trip_type` | `1` = round trip, `2` = one way |
+| `days_out_start` / `days_out_end` | Search window (days from today) |
+| `date_step` | Check every Nth day in that window |
+| `max_stops` | `0` = nonstop only, `1`, `2`, or `null` for no limit (filters at the SerpApi layer) |
+
+**Budget note:** 1 route × 13 dates × 3 runs/day × 30 days ≈ 1170 calls/month — well over the 250 free tier. `configure.py` warns you. Tighten the window or reduce cron cadence to fit.
 
 ---
 
@@ -89,11 +94,24 @@ Stay within the SerpApi free tier. For 2 routes × 13 dates × 3 runs/day × 30 
 |------|---------|
 | Tail the run log | `tail -f run.log` |
 | Manually trigger a run | `./venv/bin/python src/main.py` |
+| Update routes | `./venv/bin/python configure.py` |
 | List alerts sent | `psql "$DATABASE_URL" -c "SELECT * FROM alerts_sent ORDER BY sent_at DESC LIMIT 20;"` |
 | Show recent fares for a route | `psql "$DATABASE_URL" -c "SELECT departure_date, price, price_level FROM fares WHERE origin='RDU' AND destination='SFO' ORDER BY fetched_at DESC LIMIT 20;"` |
+| SerpApi calls this month | `psql "$DATABASE_URL" -c "SELECT COUNT(*) FROM serp_api_calls WHERE called_at >= date_trunc('month', NOW());"` |
+| Mine a field from raw SerpApi responses | `psql "$DATABASE_URL" -c "SELECT response->'price_insights'->'lowest_price' FROM serp_api_calls WHERE status='ok' ORDER BY called_at DESC LIMIT 5;"` |
 | List active cron jobs | `crontab -l` |
 
 ---
+
+## Raw SerpApi archive
+
+Every call (success, empty, or error) is logged to the `serp_api_calls` table with the full response stored as JSONB. This gives you:
+
+- An authoritative API-call counter, independent of whether the fare parsing succeeded
+- A retroactive source for any field we don't currently project into `fares` — e.g. layover airports, fare class, baggage info, carbon emissions — accessible via `response->'...'` queries
+- A debugging paper trail when SerpApi returns something unexpected
+
+Storage: responses run ~50–200 KB each. At the free tier's 250 calls/month, that's ~50 MB/month. Neon free tier is 0.5 GB, so you're good for ~10 months before you need to either upgrade or prune old rows with `DELETE FROM serp_api_calls WHERE called_at < NOW() - INTERVAL '90 days';`.
 
 ## How the deal detection works
 
@@ -128,12 +146,14 @@ The hooks cover:
 flight-alerts/
 ├── src/
 │   ├── main.py              # orchestrator
-│   ├── config.py            # routes + thresholds
-│   ├── serpapi_client.py    # SerpApi calls
+│   ├── config.py            # thresholds + routes.json loader
+│   ├── serpapi_client.py    # SerpApi calls (logs every call)
 │   ├── db.py                # Neon reads/writes
 │   ├── analyzer.py          # two-layer deal detection
 │   └── notifier.py          # Telegram formatting + send
-├── schema.sql               # fares + alerts_sent
+├── routes.json              # active routes (edited via configure.py)
+├── configure.py             # interactive route manager
+├── schema.sql               # fares + alerts_sent + serp_api_calls
 ├── .env.example             # template
 ├── requirements.txt
 ├── setup.sh                 # one-shot local setup

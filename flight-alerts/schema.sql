@@ -24,3 +24,19 @@ CREATE TABLE IF NOT EXISTS alerts_sent (
 
 CREATE INDEX IF NOT EXISTS idx_fares_route_date
     ON fares (origin, destination, departure_date, fetched_at);
+
+CREATE TABLE IF NOT EXISTS serp_api_calls (
+    id              SERIAL PRIMARY KEY,
+    called_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    route_label     TEXT NOT NULL,
+    origin          TEXT NOT NULL,
+    destination     TEXT NOT NULL,
+    outbound_date   DATE NOT NULL,
+    trip_type       INTEGER NOT NULL,
+    status          TEXT NOT NULL,         -- 'ok', 'empty', 'error'
+    error_message   TEXT,
+    response        JSONB                  -- raw SerpApi response for later mining
+);
+
+CREATE INDEX IF NOT EXISTS idx_serp_calls_called_at
+    ON serp_api_calls (called_at DESC);
