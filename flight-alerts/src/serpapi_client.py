@@ -56,8 +56,12 @@ def fetch(route: dict, departure_date: date) -> list[dict]:
         return []
 
     if "error" in response:
-        log.warning("SerpApi returned error for %s on %s: %s",
-                    route["label"], departure_date, response["error"])
+        log.warning(
+            "SerpApi returned error for %s on %s: %s",
+            route["label"],
+            departure_date,
+            response["error"],
+        )
         return []
 
     insights = response.get("price_insights") or {}
@@ -74,15 +78,21 @@ def fetch(route: dict, departure_date: date) -> list[dict]:
         log.info("No fares returned for %s on %s", route["label"], departure_date)
         return []
 
-    details = _offer_details(cheapest) if cheapest else {"airline": None, "stops": None, "duration_min": None}
+    details = (
+        _offer_details(cheapest)
+        if cheapest
+        else {"airline": None, "stops": None, "duration_min": None}
+    )
 
-    return [{
-        "origin": route["origin"],
-        "destination": route["destination"],
-        "departure_date": departure_date,
-        "price": float(lowest_price),
-        "price_level": insights.get("price_level"),
-        "typical_low": float(typical_low) if typical_low is not None else None,
-        "typical_high": float(typical_high) if typical_high is not None else None,
-        **details,
-    }]
+    return [
+        {
+            "origin": route["origin"],
+            "destination": route["destination"],
+            "departure_date": departure_date,
+            "price": float(lowest_price),
+            "price_level": insights.get("price_level"),
+            "typical_low": float(typical_low) if typical_low is not None else None,
+            "typical_high": float(typical_high) if typical_high is not None else None,
+            **details,
+        }
+    ]

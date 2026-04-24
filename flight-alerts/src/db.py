@@ -85,7 +85,9 @@ def get_median_price(origin: str, destination: str, departure_date) -> tuple[flo
         return float(row[0]), int(row[1])
 
 
-def was_recently_alerted(origin: str, destination: str, departure_date, hours: int = ALERT_COOLDOWN_HOURS) -> bool:
+def was_recently_alerted(
+    origin: str, destination: str, departure_date, hours: int = ALERT_COOLDOWN_HOURS
+) -> bool:
     with connect() as conn, conn.cursor() as cur:
         cur.execute(
             """

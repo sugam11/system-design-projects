@@ -82,14 +82,24 @@ def main() -> None:
             total_fares += fares
             total_alerts += alerts
             total_calls += calls
-            log.info("Route %s: fetched %d fares via %d calls, sent %d alerts",
-                     route["label"], fares, calls, alerts)
+            log.info(
+                "Route %s: fetched %d fares via %d calls, sent %d alerts",
+                route["label"],
+                fares,
+                calls,
+                alerts,
+            )
         except Exception:
             log.exception("Route %s failed", route["label"])
 
     elapsed = (datetime.utcnow() - started).total_seconds()
-    log.info("Done in %.1fs (fares=%d, alerts=%d, api_calls=%d)",
-             elapsed, total_fares, total_alerts, total_calls)
+    log.info(
+        "Done in %.1fs (fares=%d, alerts=%d, api_calls=%d)",
+        elapsed,
+        total_fares,
+        total_alerts,
+        total_calls,
+    )
 
     if datetime.now().hour == HEARTBEAT_HOUR:
         notifier.send_heartbeat(

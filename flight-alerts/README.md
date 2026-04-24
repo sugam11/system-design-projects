@@ -106,6 +106,22 @@ Alerts are deduped for 24h per route + departure_date via the `alerts_sent` tabl
 
 ---
 
+## Developer setup
+
+Install [pre-commit](https://pre-commit.com/) once per clone so lint, format, and secret scanning run before every commit (the same checks run in CI):
+
+```bash
+pipx install pre-commit        # or: brew install pre-commit
+pre-commit install             # from repo root
+pre-commit run --all-files     # one-time sweep
+```
+
+The hooks cover:
+- `ruff` — lint + format (Python syntax, imports, style)
+- `bandit` — Python security scan
+- `gitleaks` — secret scanning (API keys, tokens)
+- `detect-private-key`, `check-ast`, `check-yaml`, trailing whitespace, etc.
+
 ## Files
 
 ```
