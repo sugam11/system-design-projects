@@ -3,9 +3,9 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import psycopg2
-from psycopg2.extras import RealDictCursor, execute_values
+from psycopg2.extras import execute_values
 
-from config import ALERT_DEDUPE_HOURS, DATABASE_URL, MEDIAN_WINDOW_DAYS
+from config import ALERT_COOLDOWN_HOURS, DATABASE_URL
 
 log = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ def init_schema() -> None:
         cur.execute(sql)
 
 
-def insert_fares(fares: list[dict]) -> int:
+def save_fares(fares: list[dict]) -> int:
     if not fares:
         return 0
     rows = [
@@ -40,9 +40,12 @@ def insert_fares(fares: list[dict]) -> int:
             f["destination"],
             f["departure_date"],
             f["price"],
-            f["stops"],
-            f["duration_min"],
-            f["airline"],
+            f.get("price_level"),
+            f.get("typical_low"),
+            f.get("typical_high"),
+            f.get("airline"),
+            f.get("stops"),
+            f.get("duration_min"),
         )
         for f in fares
     ]
@@ -51,16 +54,17 @@ def insert_fares(fares: list[dict]) -> int:
             cur,
             """
             INSERT INTO fares
-                (origin, destination, departure_date, price, stops, duration_min, airline)
+                (origin, destination, departure_date, price, price_level,
+                 typical_low, typical_high, airline, stops, duration_min)
             VALUES %s
-            ON CONFLICT DO NOTHING
             """,
             rows,
         )
         return cur.rowcount
 
 
-def get_median_price(origin: str, destination: str, days: int = MEDIAN_WINDOW_DAYS) -> tuple[float | None, int]:
+def get_median_price(origin: str, destination: str, departure_date) -> tuple[float | None, int]:
+    """Returns (median_price, distinct_day_count) for a given route+date over last 30 days."""
     with connect() as conn, conn.cursor() as cur:
         cur.execute(
             """
@@ -70,9 +74,10 @@ def get_median_price(origin: str, destination: str, days: int = MEDIAN_WINDOW_DA
             FROM fares
             WHERE origin = %s
               AND destination = %s
-              AND fetched_at >= NOW() - (%s || ' days')::interval
+              AND departure_date = %s
+              AND fetched_at > NOW() - INTERVAL '30 days'
             """,
-            (origin, destination, days),
+            (origin, destination, departure_date),
         )
         row = cur.fetchone()
         if not row or row[0] is None:
@@ -80,15 +85,15 @@ def get_median_price(origin: str, destination: str, days: int = MEDIAN_WINDOW_DA
         return float(row[0]), int(row[1])
 
 
-def was_recently_alerted(origin: str, destination: str, departure_date, hours: int = ALERT_DEDUPE_HOURS) -> bool:
+def was_recently_alerted(origin: str, destination: str, departure_date, hours: int = ALERT_COOLDOWN_HOURS) -> bool:
     with connect() as conn, conn.cursor() as cur:
         cur.execute(
             """
-            SELECT 1 FROM alerts
+            SELECT 1 FROM alerts_sent
             WHERE origin = %s
               AND destination = %s
               AND departure_date = %s
-              AND alerted_at >= NOW() - (%s || ' hours')::interval
+              AND sent_at > NOW() - (%s || ' hours')::interval
             LIMIT 1
             """,
             (origin, destination, departure_date, hours),
@@ -96,12 +101,12 @@ def was_recently_alerted(origin: str, destination: str, departure_date, hours: i
         return cur.fetchone() is not None
 
 
-def record_alert(origin: str, destination: str, departure_date, price: float, median_price: float, pct_off: float) -> None:
+def record_alert(origin: str, destination: str, departure_date, price: float) -> None:
     with connect() as conn, conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO alerts (origin, destination, departure_date, price, median_price, pct_off)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            INSERT INTO alerts_sent (origin, destination, departure_date, price)
+            VALUES (%s, %s, %s, %s)
             """,
-            (origin, destination, departure_date, price, median_price, pct_off),
+            (origin, destination, departure_date, price),
         )

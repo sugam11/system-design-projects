@@ -16,22 +16,33 @@ def _google_flights_url(origin: str, destination: str, departure_date) -> str:
 
 
 def _format_deal(deal: dict) -> str:
+    dep = deal["departure_date"].strftime("%B %-d")
+    link = _google_flights_url(deal["origin"], deal["destination"], deal["departure_date"])
+    typical_low = deal.get("typical_low")
+    typical_high = deal.get("typical_high")
+
+    if typical_low is not None and typical_high is not None:
+        typical_str = f"(${typical_low:.0f}–${typical_high:.0f})"
+        typical_line = f"Typical range: ${typical_low:.0f} – ${typical_high:.0f}"
+    else:
+        typical_str = f"(baseline ${deal['baseline']:.0f})"
+        typical_line = f"Baseline ({deal['baseline_source']}): ${deal['baseline']:.0f}"
+
     return (
-        f"<b>Fare drop: {deal['origin']} -> {deal['destination']}</b>\n"
-        f"${deal['price']:.2f} on {deal['departure_date'].isoformat()} "
-        f"({deal['pct_off']:.0f}% below 30d median ${deal['median_price']:.2f})\n"
-        f"Stops: {deal['stops']} | Duration: {deal['duration_min']} min | "
-        f"Airline: {deal.get('airline') or 'n/a'}\n"
-        f"{_google_flights_url(deal['origin'], deal['destination'], deal['departure_date'])}"
+        "✈️ Flight Deal Alert\n\n"
+        f"{deal['origin']} → {deal['destination']}\n"
+        f"📅 Departure: {dep}\n"
+        f"💰 ${deal['price']:.0f} — {deal['pct_off']:.0f}% below typical {typical_str}\n"
+        f"🔗 {link}\n\n"
+        f"{typical_line}"
     )
 
 
-def send_deal(deal: dict) -> bool:
+def send(deal: dict) -> bool:
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
         "text": _format_deal(deal),
-        "parse_mode": "HTML",
-        "disable_web_page_preview": True,
+        "disable_web_page_preview": False,
     }
     try:
         resp = requests.post(TELEGRAM_API, json=payload, timeout=10)

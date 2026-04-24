@@ -1,4 +1,4 @@
-amadeus
+google-search-results
+psycopg2-binary
 python-dotenv
 requests
-psycopg2-binary

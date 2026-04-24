@@ -1,14 +1,14 @@
 import logging
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
-import amadeus_client
 import analyzer
 import db
 import notifier
+import serpapi_client
 from config import ROUTES
 
-LOG_PATH = Path(__file__).resolve().parent.parent / "flight-alerts.log"
+LOG_PATH = Path(__file__).resolve().parent.parent / "run.log"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -17,23 +17,54 @@ logging.basicConfig(
 )
 log = logging.getLogger("flight-alerts")
 
+HEARTBEAT_HOUR = 7
 
-def run_route(route: dict) -> tuple[int, int]:
-    fares = amadeus_client.fetch_route_fares(route)
-    db.insert_fares(fares)
-    deals = analyzer.find_deals(fares)
 
-    sent = 0
-    for deal in deals:
-        if db.was_recently_alerted(deal["origin"], deal["destination"], deal["departure_date"]):
+def _date_window(route: dict) -> list[date]:
+    today = date.today()
+    return [
+        today + timedelta(days=n)
+        for n in range(route["days_out_start"], route["days_out_end"] + 1, route["date_step"])
+    ]
+
+
+def run_route(route: dict) -> tuple[int, int, int]:
+    fares_seen = 0
+    alerts_sent = 0
+    api_calls = 0
+
+    for departure_date in _date_window(route):
+        try:
+            fares = serpapi_client.fetch(route, departure_date)
+        except Exception:
+            log.exception("Fetch failed: %s on %s", route["label"], departure_date)
             continue
-        if notifier.send_deal(deal):
-            db.record_alert(
-                deal["origin"], deal["destination"], deal["departure_date"],
-                deal["price"], deal["median_price"], deal["pct_off"],
-            )
-            sent += 1
-    return len(fares), sent
+        api_calls += 1
+
+        if not fares:
+            continue
+
+        fares_seen += len(fares)
+        try:
+            db.save_fares(fares)
+        except Exception:
+            log.exception("DB save failed: %s on %s", route["label"], departure_date)
+            continue
+
+        try:
+            deals = analyzer.check_for_deals(fares, route, departure_date)
+        except Exception:
+            log.exception("Analyzer failed: %s on %s", route["label"], departure_date)
+            continue
+
+        for deal in deals:
+            if notifier.send(deal):
+                db.record_alert(
+                    deal["origin"], deal["destination"], deal["departure_date"], deal["price"]
+                )
+                alerts_sent += 1
+
+    return fares_seen, alerts_sent, api_calls
 
 
 def main() -> None:
@@ -44,21 +75,27 @@ def main() -> None:
 
     total_fares = 0
     total_alerts = 0
+    total_calls = 0
     for route in ROUTES:
-        label = f"{route['origin']}->{route['destination']}"
         try:
-            fares, alerts = run_route(route)
+            fares, alerts, calls = run_route(route)
             total_fares += fares
             total_alerts += alerts
-            log.info("Route %s: fetched %d fares, sent %d alerts", label, fares, alerts)
+            total_calls += calls
+            log.info("Route %s: fetched %d fares via %d calls, sent %d alerts",
+                     route["label"], fares, calls, alerts)
         except Exception:
-            log.exception("Route %s failed", label)
+            log.exception("Route %s failed", route["label"])
 
     elapsed = (datetime.utcnow() - started).total_seconds()
-    notifier.send_heartbeat(
-        f"flight-alerts ok: {total_fares} fares, {total_alerts} alerts, {elapsed:.0f}s"
-    )
-    log.info("Done in %.1fs (fares=%d, alerts=%d)", elapsed, total_fares, total_alerts)
+    log.info("Done in %.1fs (fares=%d, alerts=%d, api_calls=%d)",
+             elapsed, total_fares, total_alerts, total_calls)
+
+    if datetime.now().hour == HEARTBEAT_HOUR:
+        notifier.send_heartbeat(
+            f"flight-alerts ok: {total_fares} fares, {total_alerts} alerts, "
+            f"{total_calls} api calls, {elapsed:.0f}s"
+        )
 
 
 if __name__ == "__main__":
